@@ -1,6 +1,6 @@
 {
   "name": "Mandelbrot Ultra Deep Zoom",
-  "short_name": "Mandelbrot",
+  "short_name": "MandelbrotZD",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0b0b0f",

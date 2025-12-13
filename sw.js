@@ -1,4 +1,4 @@
-const CACHE = "mandelbrot-ultradeep-v1";
+const CACHE = "mandelbrot-ultradeep-v2";
 const ASSETS = [
   "./",
   "./index.html",
