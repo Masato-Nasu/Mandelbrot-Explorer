@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0b0f" />
+  <title>Mandelbrot Ultra Deep Zoom</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <style>
+    html, body { margin:0; height:100%; background:#0b0b0f; overflow:hidden; }
+    canvas { display:block; width:100vw; height:100vh; touch-action:none; }
+    .hud{
+      position: fixed; left: 12px; top: 12px;
+      padding: 10px 12px; border-radius: 14px;
+      background: rgba(0,0,0,.45); color: rgba(255,255,255,.88);
+      font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      user-select: none;
+      backdrop-filter: blur(10px);
+      max-width: min(680px, calc(100vw - 24px));
+      white-space: pre-wrap;
+    }
+    .panel{
+      position: fixed; right: 12px; top: 12px;
+      width: min(360px, calc(100vw - 24px));
+      padding: 12px; border-radius: 16px;
+      background: rgba(0,0,0,.38); color: rgba(255,255,255,.90);
+      font: 13px/1.35 system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
+      user-select: none;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .panel h1{ font-size: 14px; margin: 0 0 8px 0; opacity: .9; }
+    .row{ display:flex; gap:10px; align-items:center; margin: 8px 0; }
+    .row label{ flex:1; opacity:.85; }
+    .row input[type="range"]{ flex: 1.2; }
+    .row input[type="number"], .row select{
+      width: 130px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.92);
+      padding: 6px 8px;
+      outline: none;
+    }
+    .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+    button{
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.92);
+      padding: 8px 10px;
+      border-radius: 14px;
+      cursor: pointer;
+    }
+    button:hover{ background: rgba(255,255,255,.09); }
+    .tip{
+      position: fixed; left: 12px; bottom: 12px;
+      padding: 10px 12px; border-radius: 12px;
+      background: rgba(0,0,0,.35); color: rgba(255,255,255,.78);
+      font: 12px/1.35 system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
+      user-select: none;
+      max-width: min(860px, calc(100vw - 24px));
+    }
+    .tip kbd{
+      font: 11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      padding: 1px 6px; border-radius: 8px;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.18);
+      margin: 0 2px;
+    }
+    .small{ font-size: 12px; opacity: .78; margin-top: 6px; }
+    .warn{ font-size: 12px; opacity: .85; color: rgba(255,220,170,.92); margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="hud" class="hud"></div>
+
+  <div class="panel" id="panel">
+    <h1>Mandelbrot Ultra Deep Zoom</h1>
+
+    <div class="row">
+      <label>品質（step）</label>
+      <select id="quality">
+        <option value="4">高速（粗い）</option>
+        <option value="2">中</option>
+        <option value="1" selected>高品質</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label>最大反復</label>
+      <input id="iter" type="number" min="50" max="200000" step="50" value="1200">
+    </div>
+
+    <div class="row">
+      <label>精度 bits</label>
+      <input id="prec" type="number" min="128" max="16384" step="64" value="768">
+    </div>
+
+    <div class="row">
+      <label>自動精度</label>
+      <select id="autoPrec">
+        <option value="on" selected>ON</option>
+        <option value="off">OFF</option>
+      </select>
+    </div>
+
+    <div class="btns">
+      <button id="reset">リセット</button>
+      <button id="rerender">再描画</button>
+      <button id="copyLink">位置リンクコピー</button>
+      <button id="togglePanel">パネル非表示</button>
+    </div>
+
+    <div class="small">
+      ドラッグ：移動 / ホイール：ズーム / ダブルクリック：ズームイン / <kbd>Shift</kbd>+ダブルクリック：ズームアウト / <kbd>R</kbd>：リセット
+    </div>
+    <div class="warn">
+      ※「本当に無限」は、必要に応じて精度(bits)を上げ続ける設計です。深度が上がるほど重くなります（CPU多用）。
+    </div>
+  </div>
+
+  <div class="tip">
+    深度ズーム時に画像が「溶ける」/「全部同じ」/「格子状」になったら、<kbd>精度 bits</kbd> を上げてください（自動精度ON推奨）。
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
