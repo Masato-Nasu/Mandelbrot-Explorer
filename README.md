@@ -1,25 +1,22 @@
-# Mandelbrot Ultra Deep Zoom (Infinite Precision)
+# Mandelbrot Ultra Deep Zoom (Infinite Precision) - 20251214_v3
 
+## 起動
+- ローカル: `python -m http.server`
+- 開く: http://localhost:8000/
+
+※ `file://` 直開きだと Worker が動かず黒画面になりがちです。
+
+## 黒画面のとき（GitHub Pagesで特に多い）
+1. `reset.html` を一度開いてください（Service Worker / Cache を削除）
+2. その後 `index.html` に戻ります
+
+## 操作
 - Drag: pan
-- Wheel: zoom (keeps pointer position stable)
+- Wheel: zoom (cursor anchored)
 - Double click: zoom in
-- Shift + double click: zoom out
+- Shift + Double click: zoom out
 - R: reset
 
-## Run
-Use a local server (Workers need http/https).
-
-```bash
-python -m http.server
-# open http://localhost:8000/
-```
-
-## Ultra deep zoom
-This app uses:
-- fast **double** (JS Number) mode for normal zoom
-- **fixed-point BigInt** mode automatically below a certain scale
-
-If it becomes slow, increase **品質(step)** to 4 or 8.
-
-If you ever see precision artifacts at extreme zoom, keep **Auto bits** ON
-(or increase `bits` manually).
+## 仕組み
+- カメラ（中心/スケール）は **BigInt の固定小数点**で保持（bitsを増やせば任意精度）
+- 描画は Web Worker に分割

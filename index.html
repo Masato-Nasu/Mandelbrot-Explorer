@@ -4,44 +4,56 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b0b0f" />
-  <title>Mandelbrot Ultra Deep Zoom</title>
-  <link rel="manifest" href="manifest.webmanifest" />
+  <title>Mandelbrot Ultra Deep Zoom (Infinite Precision)</title>
   <style>
     html, body { margin:0; height:100%; background:#0b0b0f; overflow:hidden; }
     canvas { display:block; width:100vw; height:100vh; touch-action:none; }
     .hud{
       position: fixed; left: 12px; top: 12px;
       padding: 10px 12px; border-radius: 12px;
-      background: rgba(0,0,0,.45); color: rgba(255,255,255,.9);
+      background: rgba(0,0,0,.45); color: rgba(255,255,255,.88);
       font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      user-select: none; backdrop-filter: blur(10px);
-      max-width: min(740px, calc(100vw - 24px));
+      user-select: none; pointer-events:none;
+      backdrop-filter: blur(10px);
+      max-width: min(720px, calc(100vw - 24px));
       white-space: pre-wrap;
     }
     .panel{
       position: fixed; right: 12px; top: 12px;
       padding: 10px 12px; border-radius: 12px;
       background: rgba(0,0,0,.45); color: rgba(255,255,255,.88);
-      font: 12px/1.35 system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
-      user-select: none; backdrop-filter: blur(10px);
-      display:flex; gap:10px; align-items:center;
+      font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
+      backdrop-filter: blur(10px);
+      display:flex; flex-direction:column; gap:8px;
+      min-width: 220px;
     }
-    .panel label{ display:flex; gap:6px; align-items:center; }
-    .panel input[type="number"]{
-      width: 88px; padding: 4px 6px; border-radius: 10px;
+    .panel label{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .panel input[type="number"]{ width: 120px; }
+    .panel .row{ display:flex; gap:8px; }
+    .panel button{
       border: 1px solid rgba(255,255,255,.18);
-      background: rgba(255,255,255,.06);
+      background: rgba(255,255,255,.10);
       color: rgba(255,255,255,.92);
-      outline: none;
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
     }
-    .panel input[type="checkbox"]{ transform: translateY(1px); }
+    .panel button:hover{ background: rgba(255,255,255,.14); }
+    .err{
+      position: fixed; left: 12px; right: 12px; bottom: 12px;
+      padding: 12px 12px; border-radius: 12px;
+      background: rgba(140, 0, 0, .65); color: #fff;
+      font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap;
+      display:none;
+    }
     .tip{
       position: fixed; left: 12px; bottom: 12px;
       padding: 10px 12px; border-radius: 12px;
       background: rgba(0,0,0,.35); color: rgba(255,255,255,.78);
       font: 12px/1.35 system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
       user-select: none;
-      max-width: min(920px, calc(100vw - 24px));
+      margin-bottom: 54px;
     }
     .tip kbd{
       font: 11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -50,15 +62,7 @@
       border: 1px solid rgba(255,255,255,.18);
       margin: 0 2px;
     }
-    .err{
-      position: fixed; left: 12px; top: 110px;
-      padding: 10px 12px; border-radius: 12px;
-      background: rgba(120,0,0,.35); color: rgba(255,255,255,.92);
-      font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      max-width: min(920px, calc(100vw - 24px));
-      white-space: pre-wrap;
-      display:none;
-    }
+    a { color: rgba(255,255,255,.9); }
   </style>
 </head>
 <body>
@@ -67,15 +71,19 @@
 
   <div class="panel">
     <label>Auto bits <input id="autoBits" type="checkbox" checked></label>
-    <label>bits <input id="bits" type="number" min="64" max="16384" step="64" value="512"></label>
+    <label>bits <input id="bits" type="number" min="128" max="32768" step="128" value="512"></label>
     <label>品質(step) <input id="step" type="number" min="1" max="16" step="1" value="2"></label>
+    <div class="row">
+      <button id="resetBtn" title="中心と倍率を初期化">Reset (R)</button>
+      <button id="nukeBtn" title="Service Worker/Cache を解除（黒画面対策）">Cache Nuke</button>
+    </div>
   </div>
 
   <div id="err" class="err"></div>
 
   <div class="tip">
-    ドラッグ：移動 / ホイール：ズーム / ダブルクリック：ズームイン / <kbd>Shift</kbd>+ダブルクリック：ズームアウト / <kbd>R</kbd>：リセット<br>
-    超深度で重いとき：品質(step) を 2→4→8 に上げる（粗くなる代わりに速くなります） / Auto bits ON 推奨
+    ドラッグ：移動 / ホイール：ズーム（カーソル固定） / ダブルクリック：ズームイン / <kbd>Shift</kbd>+ダブルクリック：ズームアウト / <kbd>R</kbd>：リセット<br>
+    深すぎて重いとき：品質(step) を 2→4→8 に上げる（粗くなる代わりに速く） / Auto bits ON 推奨
   </div>
 
   <script src="app.js"></script>
