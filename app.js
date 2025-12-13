@@ -15,7 +15,7 @@
   const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 
   let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  let renderScale = Math.max(0.2, Math.min(1, parseFloat(resEl && resEl.value ? resEl.value : "0.5") || 0.5));
+  let renderScale = Math.max(0.2, Math.min(1, parseFloat(resEl && resEl.value ? resEl.value : "1.0") || 1.0));
   let W = 0, H = 0;
 
   // Fixed-point camera:
@@ -221,7 +221,12 @@
 
     const isPreview = !!(opts && opts.preview);
     const iters = isPreview ? Math.min(baseIters, 900) : baseIters;
-    const step = isPreview ? Math.min(16, Math.max(baseStep, baseStep * 3)) : baseStep;
+
+    // 画質改善：停止後（full）は常に step=1 で描き直す
+    // プレビュー中（preview）は step を上げて軽くする（最低4）
+    const step = isPreview
+      ? Math.min(16, Math.max(4, baseStep * 3))
+      : 1;
 
     const halfW = BigInt(Math.floor(W / 2));
     const halfH = BigInt(Math.floor(H / 2));
@@ -334,8 +339,17 @@
 
     const oldScale = scale;
 
-    const speed = 0.0026;
-    const k = Math.max(-ZOOM_DEN*64, Math.min(ZOOM_DEN*64, Math.round(ev.deltaY * speed * ZOOM_DEN)));
+    // ズーム量（ホイール1回あたりの深度）を増やす + 修飾キーでターボ
+    const base = 0.0080;                 // 通常（大きいほど一気に進む）
+    const fine = ev.shiftKey ? 0.25 : 1.0; // Shiftで細かく
+    const turbo = ev.altKey ? 4.0 : 1.0;   // Altでターボ
+    const hyper = ev.ctrlKey ? 12.0 : 1.0; // Ctrlでハイパー（深度用）
+
+    // trackpad/マウス差をならす（deltaMode=1は行単位）
+    const dyN = ev.deltaY * (ev.deltaMode === 1 ? 16 : 1);
+
+    const speed = base * fine * turbo * hyper;
+    const k = Math.max(-ZOOM_DEN * 256, Math.min(ZOOM_DEN * 256, Math.round(dyN * speed * ZOOM_DEN)));
     applyPow2K(k);
 
     centerX += dx * (oldScale - scale);
