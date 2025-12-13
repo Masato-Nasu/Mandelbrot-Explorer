@@ -3,6 +3,45 @@ function mulFP(a, b, bits){
   return (a * b) >> bits;
 }
 
+function fixedToNumber(x, bits){
+  // x is fixed-point BigInt (scaled by 2^bits). Assumes |value| is within a few units (e.g., [-3,3]).
+  let neg = false;
+  if (x < 0n){ neg = true; x = -x; }
+  const intBI = x >> bits;
+  const intN = Number(intBI); // should be small
+  const rem = x - (intBI << bits);
+
+  let frac = 0;
+  if (bits <= 52n){
+    const denom = 2 ** Number(bits);
+    frac = Number(rem) / denom;
+  }else{
+    const sh = bits - 52n;
+    const top = rem >> sh;
+    frac = Number(top) / (2 ** 52);
+  }
+  const v = intN + frac;
+  return neg ? -v : v;
+}
+
+function isInsideQuick(cx, cy, bits){
+  // cardioid / period-2 bulb test (double precision)
+  const x = fixedToNumber(cx, bits);
+  const y = fixedToNumber(cy, bits);
+
+  // Period-2 bulb: (x+1)^2 + y^2 <= 1/16
+  const x1 = x + 1.0;
+  if (x1*x1 + y*y <= 0.0625) return true;
+
+  // Main cardioid:
+  const xq = x - 0.25;
+  const q = xq*xq + y*y;
+  if (q * (q + xq) <= 0.25 * y*y) return true;
+
+  return false;
+}
+
+
 function palette(iter, maxIter){
   if (iter >= maxIter) return [0,0,0];
   const t = (iter * 13) & 1023;

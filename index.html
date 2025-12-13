@@ -72,7 +72,19 @@
   <div class="panel">
     <label>Auto bits <input id="autoBits" type="checkbox" checked></label>
     <label>bits <input id="bits" type="number" min="128" max="32768" step="128" value="512"></label>
-    <label>品質(step) <input id="step" type="number" min="1" max="16" step="1" value="2"></label>
+    <label>品質(step) <input id="step" type="number" min="1" max="16" step="1" value="4"></label>
+
+    <label>操作中プレビュー <input id="preview" type="checkbox" checked></label>
+    <label>内部解像度
+      <select id="res">
+        <option value="1">1.0</option>
+        <option value="0.75">0.75</option>
+        <option value="0.5" selected>0.5</option>
+        <option value="0.35">0.35</option>
+      </select>
+    </label>
+    <label>iters上限 <input id="iterCap" type="number" min="200" max="20000" step="100" value="1200"></label>
+
     <div class="row">
       <button id="resetBtn" title="中心と倍率を初期化">Reset (R)</button>
       <button id="nukeBtn" title="Service Worker/Cache を解除（黒画面対策）">Cache Nuke</button>
@@ -83,7 +95,7 @@
 
   <div class="tip">
     ドラッグ：移動 / ホイール：ズーム（カーソル固定） / ダブルクリック：ズームイン / <kbd>Shift</kbd>+ダブルクリック：ズームアウト / <kbd>R</kbd>：リセット<br>
-    深すぎて重いとき：品質(step) を 2→4→8 に上げる（粗くなる代わりに速く） / Auto bits ON 推奨
+    重いとき：内部解像度を 1.0→0.5→0.35 / 品質(step) を 4→8→12 / iters上限を下げる。操作中プレビューONで体感が軽くなります。
   </div>
 
   <script src="app.js"></script>

@@ -1,17 +1,21 @@
 (() => {
-  const BUILD = "20251214_v3";
+  const BUILD = "20251214_v4_fast";
   const canvas = document.getElementById("c");
   const hud = document.getElementById("hud");
   const errBox = document.getElementById("err");
   const autoBitsEl = document.getElementById("autoBits");
   const bitsEl = document.getElementById("bits");
   const stepEl = document.getElementById("step");
+  const previewEl = document.getElementById("preview");
+  const resEl = document.getElementById("res");
+  const iterCapEl = document.getElementById("iterCap");
   const resetBtn = document.getElementById("resetBtn");
   const nukeBtn = document.getElementById("nukeBtn");
 
   const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 
-  let dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  let renderScale = Math.max(0.2, Math.min(1, parseFloat(resEl && resEl.value ? resEl.value : "0.5") || 0.5));
   let W = 0, H = 0;
 
   // Fixed-point camera:
@@ -50,8 +54,9 @@
 
   function ensurePrecision() {
     const L = fixedBitLen(scale);
-    if (L > 0 && L < 90) {
-      const add = 256;
+    // scale が小さくなりすぎたらビットを足して固定小数点の分解能を維持
+    if (L > 0 && L < 48) {
+      const add = 64;
       const sh = BigInt(add);
       centerX <<= sh;
       centerY <<= sh;
@@ -63,8 +68,9 @@
   }
 
   function maxIterForBits() {
-    const it = 260 + Math.floor((bits - 256) * 1.8);
-    return Math.max(300, Math.min(20000, it));
+    // BigInt計算は重いので、反復数は控えめに（必要なら iterCap で上げる）
+    const it = 260 + Math.floor((bits - 256) * 0.7);
+    return Math.max(280, Math.min(8000, it));
   }
 
   // Zoom factor approximation using pow2(k/den)
@@ -116,19 +122,47 @@
     requestRender("reset");
   }
 
-  function resize() {
-    dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  function resize(keepWorld=true, oldW=null, oldH=null) {
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     const cssW = Math.floor(window.innerWidth);
     const cssH = Math.floor(window.innerHeight);
-    W = Math.max(1, Math.floor(cssW * dpr));
-    H = Math.max(1, Math.floor(cssH * dpr));
+
+    const prevW = (oldW ?? W) | 0;
+    const prevH = (oldH ?? H) | 0;
+
+    W = Math.max(1, Math.floor(cssW * dpr * renderScale));
+    H = Math.max(1, Math.floor(cssH * dpr * renderScale));
+
     canvas.width = W;
     canvas.height = H;
 
-    if (scale === 0n) resetView();
-    else requestRender("resize");
+    // 解像度変更時に表示領域（世界座標の幅）を維持
+    if (keepWorld && prevW > 0 && prevH > 0 && (prevW !== W || prevH !== H)) {
+      // worldWidth = W * scale を維持したい => scale *= prevW / W
+      scale = (scale * BigInt(prevW)) / BigInt(W);
+      initialScale = (initialScale * BigInt(prevW)) / BigInt(W);
+    }
+
+    requestRender("resize");
   }
-  window.addEventListener("resize", resize, { passive: true });
+  window.addEventListener("resize", () => resize(true), { passive: true });
+
+  if (resEl) {
+    resEl.addEventListener("change", () => {
+      const prevW = W, prevH = H;
+      renderScale = Math.max(0.2, Math.min(1, parseFloat(resEl.value || "0.5") || 0.5));
+      resize(true, prevW, prevH);
+    }, { passive: true });
+  }
+  if (iterCapEl) {
+    iterCapEl.addEventListener("change", () => requestRender("iter cap"), { passive: true });
+  }
+  if (stepEl) {
+    stepEl.addEventListener("change", () => requestRender("step"), { passive: true });
+  }
+  if (previewEl) {
+    previewEl.addEventListener("change", () => requestRender("preview toggle"), { passive: true });
+  }
 
   function clearScreen() {
     ctx.fillStyle = "#0b0b0f";
@@ -155,13 +189,14 @@
       `centerX = ${centerX}/2^${bits}\n` +
       `centerY = ${centerY}/2^${bits}\n` +
       `scale   = ${scale}/2^${bits}  (zoom≈2^${magBits})\n` +
-      `iters   = ${it}\n` +
+      `iters   = ${it} (cap=${Math.max(200, Math.min(20000, (parseInt(iterCapEl.value, 10) || 1200)) )})\n` +
+      `res     = ${renderScale.toFixed(2)} (dpr=${dpr.toFixed(2)})\n` +
       `bits    = ${bits} ${autoBitsEl.checked ? "(auto)" : "(manual)"}\n` +
       `workers = ${workerCount}\n` +
       (reason ? `note   = ${reason}` : "");
   }
 
-  function requestRender(reason="") {
+  function requestRender(reason="", opts=null) {
     clearError();
     const token = ++renderToken;
     clearScreen();
@@ -180,8 +215,13 @@
       }
     }
 
-    const iters = maxIterForBits();
-    const step = Math.max(1, Math.min(16, (parseInt(stepEl.value, 10) || 2)));
+    const cap = Math.max(200, Math.min(20000, (parseInt(iterCapEl.value, 10) || 1200)));
+    const baseIters = Math.min(maxIterForBits(), cap);
+    const baseStep = Math.max(1, Math.min(16, (parseInt(stepEl.value, 10) || 4)));
+
+    const isPreview = !!(opts && opts.preview);
+    const iters = isPreview ? Math.min(baseIters, 900) : baseIters;
+    const step = isPreview ? Math.min(16, Math.max(baseStep, baseStep * 3)) : baseStep;
 
     const halfW = BigInt(Math.floor(W / 2));
     const halfH = BigInt(Math.floor(H / 2));
@@ -252,7 +292,13 @@
   let renderDebounce = 0;
   function scheduleRender(reason) {
     clearTimeout(renderDebounce);
-    renderDebounce = setTimeout(() => requestRender(reason), 60);
+    if (previewEl && previewEl.checked) {
+      // 体感重視：操作中はプレビューを先に描き、少し止まったらフル描画
+      requestRender(reason + " (preview)", { preview: true });
+      renderDebounce = setTimeout(() => requestRender(reason + " (full)", { preview: false }), 220);
+    } else {
+      renderDebounce = setTimeout(() => requestRender(reason), 80);
+    }
   }
 
   canvas.addEventListener("pointerdown", (ev) => {
@@ -344,6 +390,6 @@
   autoBitsEl.addEventListener("change", () => requestRender("auto bits"));
   stepEl.addEventListener("change", () => requestRender("step"));
 
-  resize();
+  resize(false);
   updateHUD("ready");
 })();
