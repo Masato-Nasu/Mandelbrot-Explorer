@@ -126,4 +126,4 @@ python -m http.server 8000
 ---
 
 ## License
-MIT（必要なら変更してください）
+MIT
