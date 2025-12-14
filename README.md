@@ -1,31 +1,23 @@
-# Mandelbrot Ultra Deep Zoom (Infinite Precision) - 20251214_v3
+# Mandelbrot Explorer UltraDeep (v5)
 
-## 起動
-- ローカル: `python -m http.server`
-- 開く: http://localhost:8000/
+この版は「黒画面になったときに原因を画面に表示」できるように、エラー表示領域（赤いボックス）を標準搭載しています。
 
-※ `file://` 直開きだと Worker が動かず黒画面になりがちです。
-
-## 黒画面のとき（GitHub Pagesで特に多い）
-1. `reset.html` を一度開いてください（Service Worker / Cache を削除）
-2. その後 `index.html` に戻ります
+## まず最初に（GitHub Pages で黒い場合）
+1. `reset.html` を先に開いてください（Service Worker / Cache を全削除します）
+2. その後 `index.html` を開き直してください
 
 ## 操作
-- Drag: pan
-- Wheel: zoom (cursor anchored)
-- Double click: zoom in
-- Shift + Double click: zoom out
-- R: reset
+- ドラッグ：移動
+- ホイール：ズーム（深度強め）
+  - **Alt + ホイール**：ターボ
+  - **Ctrl + ホイール**：ハイパー（深度用）
+  - **Shift + ホイール**：微調整
+- ダブルクリック：ズームイン / Shift + ダブルクリック：ズームアウト
+- R：リセット
 
-## 仕組み
-- カメラ（中心/スケール）は **BigInt の固定小数点**で保持（bitsを増やせば任意精度）
-- 描画は Web Worker に分割
+## 画質
+- 操作中はプレビュー（軽い）
+- 止めると自動で **step=1** の高精細で描き直します
+- それでも荒い場合は UI の `res` を 1.0 に、`step` を 1〜2 にしてください
 
-
-BUILD: 20251214_v4_fast
-
-
-## v4 Fast tips
-- 内部解像度を 0.5 / 0.35 に下げると体感が大きく軽くなります。
-- 操作中プレビューONで、ドラッグ/ズーム中は粗く、止まると精細描画に戻ります。
-- iters上限を下げると境界が軽くなります。
+Build: 20251214_v5_zoom_hiRes

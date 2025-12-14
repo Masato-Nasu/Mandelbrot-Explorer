@@ -1,3 +1,4 @@
+// 20251214_v5_zoom_hiRes
 /* classic worker - fixed-point BigInt Mandelbrot */
 function mulFP(a, b, bits){
   return (a * b) >> bits;
