@@ -1,5 +1,5 @@
 (() => {
-  const BUILD = "20251214_v4_fast";
+  const BUILD = "20251214_v4_fast_plus";
   const canvas = document.getElementById("c");
   const hud = document.getElementById("hud");
   const errBox = document.getElementById("err");
