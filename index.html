@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b0b0f" />
-  <title>Mandelbrot Explorer UltraDeep v6</title>
+  <title>Mandelbrot Explorer UltraDeep v7</title>
   <link rel="icon" href="./favicon.ico" />
   <style>
     html,body{margin:0;height:100%;background:#0b0b0f;overflow:hidden}
@@ -16,11 +16,11 @@
       font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
       user-select:none;pointer-events:none;white-space:pre-wrap;
       backdrop-filter: blur(10px);
-      max-width:min(640px,calc(100vw - 24px));
+      max-width:min(680px,calc(100vw - 24px));
     }
     .panel{
       position:fixed;right:12px;top:12px;z-index:30;
-      width:min(420px,calc(100vw - 24px));
+      width:min(430px,calc(100vw - 24px));
       padding:10px 12px;border-radius:14px;
       background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);
       font:12px/1.35 system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans JP",sans-serif;
@@ -29,9 +29,9 @@
     }
     .row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:6px 0}
     .row label{opacity:.9}
-    .row input[type="range"]{width:210px}
+    .row input[type="range"]{width:220px}
     .row input[type="number"], .row select{
-      width:130px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+      width:150px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
       border-radius:10px;color:#fff;padding:6px 8px;outline:none;
       font:12px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
     }
@@ -54,12 +54,19 @@
 </head>
 <body>
   <canvas id="c"></canvas>
-  <div id="hud" class="hud"></div>
+  <div id="hud" class="hud">Loading…</div>
 
   <div class="panel">
     <div class="row">
+      <label>モード</label>
+      <select id="mode">
+        <option value="ultradeep" selected>UltraDeep (BigInt)</option>
+        <option value="standard">Standard (float64)</option>
+      </select>
+    </div>
+    <div class="row">
       <label>内部解像度</label>
-      <input id="res" type="range" min="0.30" max="1.00" step="0.05" value="0.65" />
+      <input id="res" type="range" min="0.30" max="1.00" step="0.05" value="0.70" />
     </div>
     <div class="row">
       <label>step（粗さ）</label>
@@ -75,30 +82,30 @@
     </div>
     <div class="row">
       <label>反復上限</label>
-      <input id="iterCap" type="number" min="200" max="20000" step="50" value="1200" />
+      <input id="iterCap" type="number" min="150" max="30000" step="50" value="1400" />
     </div>
     <div class="row">
       <label>bits（精度）</label>
-      <input id="bits" type="number" min="64" max="8192" step="64" value="512" />
+      <input id="bits" type="number" min="96" max="8192" step="64" value="512" />
     </div>
     <div class="row">
       <label>Auto bits</label>
       <input id="autoBits" type="checkbox" checked />
     </div>
     <div class="row">
-      <label>プレビュー中は軽く</label>
+      <label>操作中プレビュー</label>
       <input id="preview" type="checkbox" checked />
     </div>
     <div class="row">
-      <label>停止後に自動で高精細</label>
+      <label>停止後に高精細</label>
       <input id="autoSettle" type="checkbox" checked />
     </div>
 
     <div class="btns">
-      <button id="hqBtn" title="step=1 & 内部解像度=1.0 で一発高精細レンダ">HQ Render</button>
-      <button id="resetBtn">Reset</button>
+      <button id="hqBtn" title="一発だけ高精細（重い）">HQ Render</button>
+      <button id="resetBtn">Reset (R)</button>
       <button id="nukeBtn" title="古いキャッシュを消す">Cache Nuke</button>
-      <button id="openReset" onclick="location.href='./reset.html'">reset.htmlへ</button>
+      <button onclick="location.href='./reset.html'">reset.html</button>
     </div>
 
     <div class="hint">
@@ -109,6 +116,24 @@
 
   <div id="errBox"></div>
 
-  <script src="./app.js"></script>
+  <!-- Bootloader: app.js が落ちてもエラーを画面に出す -->
+  <script>
+    (function(){
+      const errBox = document.getElementById('errBox');
+      function showErr(t){
+        errBox.style.display='block';
+        errBox.textContent = t;
+      }
+      window.addEventListener('error', (e)=> showErr('[window.error]\n'+e.message+'\n'+e.filename+':'+e.lineno+':'+e.colno));
+      window.addEventListener('unhandledrejection', (e)=> showErr('[unhandledrejection]\n'+((e.reason&& (e.reason.stack||e.reason.message))||e.reason)));
+
+      const build = '20251214_v7_' + Date.now().toString(36);
+      const s = document.createElement('script');
+      s.src = './app.js?v=' + build; // cache bust
+      s.defer = true;
+      s.onerror = ()=>showErr('[load error]\napp.js failed to load');
+      document.head.appendChild(s);
+    })();
+  </script>
 </body>
 </html>

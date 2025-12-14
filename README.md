@@ -1,19 +1,20 @@
-# Mandelbrot Explorer UltraDeep v6 (Turbo)
+# Mandelbrot Explorer UltraDeep v7
 
-目的：
-- BigInt固定小数点で「精度bitsを上げ続ける」ことで超深度ズームに対応（理論上無限）
-- ただし重いので、探索中は preview を軽くし、必要な瞬間だけ HQ で描画
+黒画面を潰すために、app.jsを全面書き直した安定版です。
 
-操作：
+特徴
+- UltraDeep(BigInt) / Standard(float64) 切替
+- 操作中プレビュー（粗く・軽い）→停止後に高精細（任意）
+- 画面下にエラーを赤表示（DevTools不要）
+- app.js/worker.js はクエリ付きで読み込み（キャッシュ混線を減らす）
+
+GitHub Pages 手順
+1) ZIPの中身をリポジトリ直下へ全部上書き
+2) /reset.html を一度開いてキャッシュ掃除
+3) / を開く
+
+操作
 - ドラッグ：移動
-- ホイール：ズーム
-  - Alt：ターボ
-  - Ctrl：ハイパー
-  - Shift：微調整
+- ホイール：ズーム（Alt/Ctrl/Shift で倍率）
 - R：リセット
-- HQ Render：step=1 & 内部解像度=1.0 で一発高精細
-
-GitHub Pages で黒画面になる場合：
-1) /reset.html を開く（SW/Cache掃除）
-2) その後 / を開く
-
+- HQ Render：一発だけ高精細（重い）
