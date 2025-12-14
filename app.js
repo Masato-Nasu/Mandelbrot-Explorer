@@ -1,5 +1,5 @@
 (() => {
-  const BUILD = "20251214_v5_zoom_hiRes";
+  const BUILD = "20251214_v6_turbo";
   const canvas = document.getElementById("c");
   const hud = document.getElementById("hud");
   const errBox = document.getElementById("err");
@@ -12,10 +12,14 @@
   const resetBtn = document.getElementById("resetBtn");
   const nukeBtn = document.getElementById("nukeBtn");
 
+  const autoSettleEl = document.getElementById("autoSettle");
+  const hqBtn = document.getElementById("hqBtn");
+
+
   const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 
   let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  let renderScale = Math.max(0.2, Math.min(1, parseFloat(resEl && resEl.value ? resEl.value : "1.0") || 1.0));
+  let renderScale = Math.max(0.2, Math.min(1, parseFloat(resEl && resEl.value ? resEl.value : "0.65") || 0.65));
   let W = 0, H = 0;
 
   // Fixed-point camera:
@@ -220,18 +224,28 @@
     const baseStep = Math.max(1, Math.min(16, (parseInt(stepEl.value, 10) || 4)));
 
     const isPreview = !!(opts && opts.preview);
-    const iters = isPreview ? Math.min(baseIters, 900) : baseIters;
+    const isHQ = !!(opts && opts.hq);
 
-    // 画質改善：停止後（full）は常に step=1 で描き直す
-    // プレビュー中（preview）は step を上げて軽くする（最低4）
-    const step = isPreview
-      ? Math.min(16, Math.max(4, baseStep * 3))
-      : 1;
+    const iters = isHQ ? Math.min(Math.max(baseIters, 1500), cap) : (isPreview ? Math.min(baseIters, 900) : baseIters);
+
+    // 速度と画質の両立：
+    // - preview: stepを強めに（最低6）で軽く
+    // - normal: UIのstep（既定2）
+    // - HQ: step=1 強制
+    const step = isHQ ? 1 : (isPreview ? Math.min(16, Math.max(6, baseStep * 3)) : baseStep);
 
     const halfW = BigInt(Math.floor(W / 2));
     const halfH = BigInt(Math.floor(H / 2));
     const xmin = centerX - halfW * scale;
     const ymin = centerY - halfH * scale;
+
+    // プレビュー中はビット数を落として高速化（見た目はほぼ維持。深度が深いほど効く）
+    const PREVIEW_BITS_CAP = 160;
+    const bitsUsed = (isPreview ? Math.min(bits, PREVIEW_BITS_CAP) : bits) | 0;
+    const shBits = (bits - bitsUsed) | 0;
+    const xmin2 = shBits > 0 ? (xmin >> BigInt(shBits)) : xmin;
+    const ymin2 = shBits > 0 ? (ymin >> BigInt(shBits)) : ymin;
+    const scale2 = shBits > 0 ? (scale >> BigInt(shBits)) : scale;
 
     const strip = Math.max(16, Math.floor(H / (workerCount * 6)));
     const jobs = [];
@@ -275,10 +289,10 @@
         rows,
         step,
         maxIter: iters,
-        bits,
-        xmin,
-        ymin,
-        scale
+        bits: bitsUsed,
+        xmin: xmin2,
+        ymin: ymin2,
+        scale: scale2
       });
     }
   }
@@ -295,13 +309,18 @@
   }
 
   let renderDebounce = 0;
-  function scheduleRender(reason) {
+  let settleTimer = 0;
+  function scheduleRender(reason="") {
+    // 操作中はプレビュー（粗く/軽く）を優先し、止まったら（任意で）高精細に描き直す
     clearTimeout(renderDebounce);
-    if (previewEl && previewEl.checked) {
-      // 体感重視：操作中はプレビューを先に描き、少し止まったらフル描画
-      requestRender(reason + " (preview)", { preview: true });
-      renderDebounce = setTimeout(() => requestRender(reason + " (full)", { preview: false }), 220);
-    } else {
+    renderDebounce = setTimeout(() => requestRender(reason, { preview: true }), 40);
+
+    // 自動settle（高精細）は重いので、ON/OFFできるようにする
+    if (autoSettleEl && autoSettleEl.checked) {
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => requestRender("settle", { preview: false }), 220);
+    }
+  } else {
       renderDebounce = setTimeout(() => requestRender(reason), 80);
     }
   }
@@ -339,17 +358,13 @@
 
     const oldScale = scale;
 
-    // ズーム量（ホイール1回あたりの深度）を増やす + 修飾キーでターボ
-    const base = 0.0080;                 // 通常（大きいほど一気に進む）
-    const fine = ev.shiftKey ? 0.25 : 1.0; // Shiftで細かく
-    const turbo = ev.altKey ? 4.0 : 1.0;   // Altでターボ
-    const hyper = ev.ctrlKey ? 12.0 : 1.0; // Ctrlでハイパー（深度用）
-
-    // trackpad/マウス差をならす（deltaMode=1は行単位）
+    const base = 0.0080;
+    const fine = ev.shiftKey ? 0.25 : 1.0;
+    const turbo = ev.altKey ? 4.0 : 1.0;
+    const hyper = ev.ctrlKey ? 12.0 : 1.0;
     const dyN = ev.deltaY * (ev.deltaMode === 1 ? 16 : 1);
-
     const speed = base * fine * turbo * hyper;
-    const k = Math.max(-ZOOM_DEN * 256, Math.min(ZOOM_DEN * 256, Math.round(dyN * speed * ZOOM_DEN)));
+    const k = Math.max(-ZOOM_DEN*64, Math.min(ZOOM_DEN*64, Math.round(ev.deltaY * speed * ZOOM_DEN)));
     applyPow2K(k);
 
     centerX += dx * (oldScale - scale);
@@ -380,9 +395,27 @@
   }, { passive: true });
 
   resetBtn.addEventListener("click", () => resetView());
-  nukeBtn.addEventListener("click", () => {
-    location.href = "./reset.html?cb=" + Date.now();
+  nukeBtn.addEventListener("click", () => { location.href = "./reset.html"; });
   });
+  if (hqBtn) {
+    hqBtn.addEventListener("click", () => {
+      // 一発高精細：内部解像度1.0で再描画（探索中はresを戻してOK）
+      const prevRes = renderScale;
+      const prevStep = stepEl ? stepEl.value : "2";
+      if (resEl) resEl.value = "1.0";
+      renderScale = 1.0;
+      resize(true);
+
+      // HQレンダ（重いので手動）
+      requestRender("HQ", { hq: true });
+
+      // UIのstepは触らない（値は保持）
+      if (stepEl) stepEl.value = prevStep;
+
+      // ※resはユーザーが戻す前提（自動で戻すと「綺麗に撮りたい」時に困る）
+    });
+  }
+
 
   // UI bindings
   bitsEl.addEventListener("change", () => {

@@ -1,23 +1,19 @@
-# Mandelbrot Explorer UltraDeep (v5)
+# Mandelbrot Explorer UltraDeep v6 (Turbo)
 
-この版は「黒画面になったときに原因を画面に表示」できるように、エラー表示領域（赤いボックス）を標準搭載しています。
+目的：
+- BigInt固定小数点で「精度bitsを上げ続ける」ことで超深度ズームに対応（理論上無限）
+- ただし重いので、探索中は preview を軽くし、必要な瞬間だけ HQ で描画
 
-## まず最初に（GitHub Pages で黒い場合）
-1. `reset.html` を先に開いてください（Service Worker / Cache を全削除します）
-2. その後 `index.html` を開き直してください
-
-## 操作
+操作：
 - ドラッグ：移動
-- ホイール：ズーム（深度強め）
-  - **Alt + ホイール**：ターボ
-  - **Ctrl + ホイール**：ハイパー（深度用）
-  - **Shift + ホイール**：微調整
-- ダブルクリック：ズームイン / Shift + ダブルクリック：ズームアウト
+- ホイール：ズーム
+  - Alt：ターボ
+  - Ctrl：ハイパー
+  - Shift：微調整
 - R：リセット
+- HQ Render：step=1 & 内部解像度=1.0 で一発高精細
 
-## 画質
-- 操作中はプレビュー（軽い）
-- 止めると自動で **step=1** の高精細で描き直します
-- それでも荒い場合は UI の `res` を 1.0 に、`step` を 1〜2 にしてください
+GitHub Pages で黒画面になる場合：
+1) /reset.html を開く（SW/Cache掃除）
+2) その後 / を開く
 
-Build: 20251214_v5_zoom_hiRes
