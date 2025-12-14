@@ -1,0 +1,8 @@
+Patched app.js (v4_fast tuning)
+- Faster wheel zoom (Alt/Ctrl turbo, Shift fine, deltaMode normalization)
+- Sharper final image: full render forces step=1
+- Default internal resolution fallback changed from 0.5 to 1.0 (if slider value missing)
+
+Replacements performed:
+- step block replacements: 1
+- wheel speed replacements: 1
