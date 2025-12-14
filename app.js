@@ -199,7 +199,7 @@ function fixed2f(v, bits){
     const hyper = ev.ctrlKey ? 12.0 : 1.0;
     const dyN = ev.deltaY * (ev.deltaMode === 1 ? 16 : 1);
     const speed = base * fine * turbo * hyper;
-    const factor = Math.exp(dyN * speed);
+    const factor = Math.exp(-dyN * speed);
 
     // clamp scale
     scaleF = Math.max(1e-300, Math.min(10, scaleF * factor));
@@ -351,9 +351,14 @@ last   = ${ms|0} ms   ${reason||""}`;
       const m = ev.data;
       if (!m || m.token !== token || m.type !== "strip") return;
       const data = new Uint8ClampedArray(m.buffer);
-      const img = new ImageData(data, W, m.rows);
+      // 防御：キャッシュ混線/サイズ変更などで data 長が合わない場合は捨てる
+      const rowsFromData = Math.floor(data.length / (W * 4));
+      if (rowsFromData <= 0 || rowsFromData * W * 4 !== data.length) return;
+      if (m.startY + rowsFromData > H) return;
+
+      const img = new ImageData(data, W, rowsFromData);
       ctx.putImageData(img, 0, m.startY);
-      done++;
+done++;
       if (done >= jobs.length) {
         for (const w of workers) w.removeEventListener("message", onMsg);
         if (token !== renderToken) return;
