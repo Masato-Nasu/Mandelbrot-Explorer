@@ -220,10 +220,10 @@ function fixed2f(v, bits){
     centerX = -0.5; centerY = 0.0;
     scaleF = initialScale || (3.5 / Math.max(1, W));
     requestRender("reset", { preview:false });
+  }
 
   async function savePNG(){
     try{
-      // Ensure a clean frame before capture: use full quality render if user wants
       const mode = (modeEl?.value || "ultradeep");
       const bits = (bitsEl?.value || "").trim();
       const iters = (iterEl?.value || "").trim();
@@ -244,15 +244,15 @@ function fixed2f(v, bits){
       a.remove();
       setTimeout(()=>URL.revokeObjectURL(url), 4000);
     }catch(e){
-      showErr("[savePNG]
-" + (e && (e.stack || e.message) || e));
+      showErr("[savePNG]\n" + ((e && (e.stack || e.message)) || e));
     }
   }
-  }
+
   resetBtn?.addEventListener("click", doReset);
   nukeBtn?.addEventListener("click", () => { location.href = "./reset.html"; });
 
   saveBtn?.addEventListener("click", () => { savePNG(); });
+
 
   hqBtn?.addEventListener("click", () => {
     // 段階的に高精細化：まず軽く出してから step を下げていく（最終的に step=1）
