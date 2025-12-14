@@ -18,3 +18,8 @@ GitHub Pages 手順
 - ホイール：ズーム（Alt/Ctrl/Shift で倍率）
 - R：リセット
 - HQ Render：一発だけ高精細（重い）
+
+
+## v7.4 additions
+- HQ Render: progressive refinement (step 6→3→2→1)
+- Save PNG button / S key

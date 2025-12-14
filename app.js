@@ -15,6 +15,7 @@
   const previewEl = $("preview");
   const autoSettleEl = $("autoSettle");
   const hqBtn = $("hqBtn");
+  const saveBtn = $("saveBtn");
   const resetBtn = $("resetBtn");
   const nukeBtn = $("nukeBtn");
 
@@ -212,23 +213,64 @@ function fixed2f(v, bits){
 
   window.addEventListener("keydown", (ev) => {
     if (ev.key.toLowerCase() === "r") doReset();
+    if (ev.key.toLowerCase() === "s") savePNG();
   }, { passive:true });
 
   function doReset(){
     centerX = -0.5; centerY = 0.0;
     scaleF = initialScale || (3.5 / Math.max(1, W));
     requestRender("reset", { preview:false });
+
+  async function savePNG(){
+    try{
+      // Ensure a clean frame before capture: use full quality render if user wants
+      const mode = (modeEl?.value || "ultradeep");
+      const bits = (bitsEl?.value || "").trim();
+      const iters = (iterEl?.value || "").trim();
+      const step = (stepEl?.value || "").trim();
+      const res = (resEl?.value || "").trim();
+      const stamp = new Date().toISOString().replace(/[:.]/g,"-");
+      const name = `mandelbrot_${mode}_bits${bits}_it${iters}_step${step}_res${res}_${stamp}.png`;
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("toBlob failed");
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    }catch(e){
+      showErr("[savePNG]
+" + (e && (e.stack || e.message) || e));
+    }
+  }
   }
   resetBtn?.addEventListener("click", doReset);
   nukeBtn?.addEventListener("click", () => { location.href = "./reset.html"; });
 
-  hqBtn?.addEventListener("click", () => {
-    if (resEl) resEl.value = "1.00";
-    if (stepEl) stepEl.value = "1";
-    resize(true);
-    requestRender("HQ", { preview:false, hq:true });
-  });
+  saveBtn?.addEventListener("click", () => { savePNG(); });
 
+  hqBtn?.addEventListener("click", () => {
+    // 段階的に高精細化：まず軽く出してから step を下げていく（最終的に step=1）
+    // 内部解像度は 1.0 に固定して作品品質を狙う
+    if (resEl) resEl.value = "1.00";
+    resize(true);
+
+    const passes = [6, 3, 2, 1];
+    const delays = [0, 220, 520, 900]; // ms
+
+    for (let i = 0; i < passes.length; i++) {
+      const st = passes[i];
+      setTimeout(() => {
+        if (stepEl) stepEl.value = String(st);
+        requestRender("HQ pass step=" + st, { preview: false, forceStep: st });
+      }, delays[i]);
+    }
+  });
   // Rendering
   function clear(){
     ctx.fillStyle = "#0b0b0f";
@@ -250,7 +292,8 @@ last   = ${ms|0} ms   ${reason||""}`;
     const internal = parseFloat(resEl?.value || "0.70");
     const preview = !!(opts && opts.preview) && (previewEl?.checked ?? true);
     const baseStep = parseInt(stepEl?.value || "2", 10);
-    const step = (opts && opts.hq) ? 1 : (preview ? Math.min(16, Math.max(6, baseStep*3)) : baseStep);
+    let step = ((opts && opts.hq) ? 1 : (preview ? Math.min(16, Math.max(6, baseStep*3)) : baseStep));
+    if (opts && Number.isFinite(opts.forceStep)) step = Math.max(1, opts.forceStep|0);
     const iters = itersForScale(scaleF);
 
     const img = ctx.createImageData(W, H);
@@ -313,7 +356,8 @@ last   = ${ms|0} ms   ${reason||""}`;
 
     // choose step
     const baseStep = parseInt(stepEl?.value || "2", 10);
-    const step = (opts && opts.hq) ? 1 : (preview ? Math.min(16, Math.max(6, baseStep*3)) : baseStep);
+    let step = ((opts && opts.hq) ? 1 : (preview ? Math.min(16, Math.max(6, baseStep*3)) : baseStep));
+    if (opts && Number.isFinite(opts.forceStep)) step = Math.max(1, opts.forceStep|0);
 
     // fixed-point mapping
     // Use baseBits for center+scale mapping then downshift to bitsUsed to preserve location
