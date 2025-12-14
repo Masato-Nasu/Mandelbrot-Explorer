@@ -1,179 +1,65 @@
 (() => {
-  const BUILD = "20251214_v6_turbo";
+  const BUILD = "20251214_v6_2_turbo_shiftzoom";
+
   const canvas = document.getElementById("c");
   const hud = document.getElementById("hud");
-  const errBox = document.getElementById("err");
+  const errBox = document.getElementById("errBox");
+
   const autoBitsEl = document.getElementById("autoBits");
   const bitsEl = document.getElementById("bits");
   const stepEl = document.getElementById("step");
   const previewEl = document.getElementById("preview");
+  const autoSettleEl = document.getElementById("autoSettle");
   const resEl = document.getElementById("res");
   const iterCapEl = document.getElementById("iterCap");
+
   const resetBtn = document.getElementById("resetBtn");
   const nukeBtn = document.getElementById("nukeBtn");
-
-  const autoSettleEl = document.getElementById("autoSettle");
   const hqBtn = document.getElementById("hqBtn");
 
-
-  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-
-  let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  let renderScale = Math.max(0.2, Math.min(1, parseFloat(resEl && resEl.value ? resEl.value : "0.65") || 0.65));
-  let W = 0, H = 0;
-
-  // Fixed-point camera:
-  // value_real = value_fixed / 2^bits
-  let bits = (parseInt(bitsEl.value, 10) || 512) | 0;
-  let centerX = 0n;
-  let centerY = 0n;
-  let scale = 0n; // complex units per pixel in fixed
-  let initialScale = 0n;
-
-  function showError(e) {
+  function showError(text) {
+    if (!errBox) return;
     errBox.style.display = "block";
-    errBox.textContent = String(e && e.stack ? e.stack : e);
+    errBox.textContent = String(text);
   }
   function clearError() {
+    if (!errBox) return;
     errBox.style.display = "none";
     errBox.textContent = "";
   }
 
-  // Helpers: Number -> fixed BigInt with current bits (safe for small magnitude inputs)
-  function numToFixed(x, bitsNow) {
-    const b = bitsNow | 0;
-    const sign = x < 0 ? -1n : 1n;
-    const ax = Math.abs(x);
-    const hiBits = Math.min(53, b);
-    const F = Math.pow(2, hiBits);
-    const hi = BigInt(Math.round(ax * F));
-    const shift = BigInt(Math.max(0, b - hiBits));
-    return sign * (hi << shift);
+  window.addEventListener("error", (e) => {
+    showError(`[window.error]\n${e.message}\n${e.filename}:${e.lineno}:${e.colno}`);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    const r = e.reason;
+    showError(`[unhandledrejection]\n${(r && (r.stack || r.message)) || r}`);
+  });
+
+  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+
+  let dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  let cssW = 1, cssH = 1;
+  let W = 1, H = 1;
+
+  // Fixed-point (BigInt): value / 2^bits
+  let bits = Math.max(64, Math.min(8192, parseInt(bitsEl?.value || "512", 10) || 512)) | 0;
+  const B = () => BigInt(bits);
+
+  // View params
+  let centerX = 0n;
+  let centerY = 0n;
+  let scale = 1n;        // complex units per pixel, fixed-point
+  let initialScale = 1n; // for HUD zoom reference
+
+  function fixedBitLen(x) {
+    // approximate magnitude by bit length
+    const ax = x < 0n ? -x : x;
+    if (ax === 0n) return 0;
+    return ax.toString(2).length;
   }
 
-  function fixedBitLen(v) {
-    const a = v < 0n ? -v : v;
-    return a === 0n ? 0 : a.toString(2).length;
-  }
-
-  function ensurePrecision() {
-    const L = fixedBitLen(scale);
-    // scale が小さくなりすぎたらビットを足して固定小数点の分解能を維持
-    if (L > 0 && L < 48) {
-      const add = 64;
-      const sh = BigInt(add);
-      centerX <<= sh;
-      centerY <<= sh;
-      scale   <<= sh;
-      initialScale <<= sh;
-      bits += add;
-      bitsEl.value = String(bits);
-    }
-  }
-
-  function maxIterForBits() {
-    // BigInt計算は重いので、反復数は控えめに（必要なら iterCap で上げる）
-    const it = 260 + Math.floor((bits - 256) * 0.7);
-    return Math.max(280, Math.min(8000, it));
-  }
-
-  // Zoom factor approximation using pow2(k/den)
-  const ZOOM_DEN = 1024;
-  const ZOOM_Q = 60; // fixed bits for zoom multipliers
-  const zoomTable = new Array(ZOOM_DEN);
-  for (let i = 0; i < ZOOM_DEN; i++) {
-    const v = Math.pow(2, i / ZOOM_DEN);
-    zoomTable[i] = BigInt(Math.round(v * Math.pow(2, ZOOM_Q)));
-  }
-
-  function mulByZoomFactor(xFixed, q, r) {
-    if (r !== 0) {
-      xFixed = (xFixed * zoomTable[r]) >> BigInt(ZOOM_Q);
-    }
-    if (q > 0) xFixed <<= BigInt(q);
-    else if (q < 0) xFixed >>= BigInt(-q);
-    return xFixed;
-  }
-
-  function applyPow2K(k) {
-    if (k === 0) return;
-    let q = 0, r = 0;
-    if (k > 0) {
-      q = Math.floor(k / ZOOM_DEN);
-      r = k - q * ZOOM_DEN;
-    } else {
-      const kk = -k;
-      const q0 = Math.floor(kk / ZOOM_DEN);
-      const r0 = kk - q0 * ZOOM_DEN;
-      if (r0 === 0) {
-        q = -q0; r = 0;
-      } else {
-        q = -(q0 + 1);
-        r = ZOOM_DEN - r0;
-      }
-    }
-    scale = mulByZoomFactor(scale, q, r);
-    ensurePrecision();
-  }
-
-  function resetView() {
-    bits = (parseInt(bitsEl.value, 10) || 512) | 0;
-    centerX = numToFixed(-0.5, bits);
-    centerY = numToFixed(0.0, bits);
-    const s = 3.5 / Math.max(1, W);
-    scale = numToFixed(s, bits);
-    initialScale = scale;
-    requestRender("reset");
-  }
-
-  function resize(keepWorld=true, oldW=null, oldH=null) {
-    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    const cssW = Math.floor(window.innerWidth);
-    const cssH = Math.floor(window.innerHeight);
-
-    const prevW = (oldW ?? W) | 0;
-    const prevH = (oldH ?? H) | 0;
-
-    W = Math.max(1, Math.floor(cssW * dpr * renderScale));
-    H = Math.max(1, Math.floor(cssH * dpr * renderScale));
-
-    canvas.width = W;
-    canvas.height = H;
-
-    // 解像度変更時に表示領域（世界座標の幅）を維持
-    if (keepWorld && prevW > 0 && prevH > 0 && (prevW !== W || prevH !== H)) {
-      // worldWidth = W * scale を維持したい => scale *= prevW / W
-      scale = (scale * BigInt(prevW)) / BigInt(W);
-      initialScale = (initialScale * BigInt(prevW)) / BigInt(W);
-    }
-
-    requestRender("resize");
-  }
-  window.addEventListener("resize", () => resize(true), { passive: true });
-
-  if (resEl) {
-    resEl.addEventListener("change", () => {
-      const prevW = W, prevH = H;
-      renderScale = Math.max(0.2, Math.min(1, parseFloat(resEl.value || "0.5") || 0.5));
-      resize(true, prevW, prevH);
-    }, { passive: true });
-  }
-  if (iterCapEl) {
-    iterCapEl.addEventListener("change", () => requestRender("iter cap"), { passive: true });
-  }
-  if (stepEl) {
-    stepEl.addEventListener("change", () => requestRender("step"), { passive: true });
-  }
-  if (previewEl) {
-    previewEl.addEventListener("change", () => requestRender("preview toggle"), { passive: true });
-  }
-
-  function clearScreen() {
-    ctx.fillStyle = "#0b0b0f";
-    ctx.fillRect(0, 0, W, H);
-  }
-
-  // Workers
+  // ---- Worker pool ----
   const workerCount = Math.max(1, Math.min((navigator.hardwareConcurrency || 4) - 1, 8));
   const workers = [];
   for (let i = 0; i < workerCount; i++) {
@@ -185,67 +71,139 @@
 
   let renderToken = 0;
 
-  function updateHUD(reason="") {
-    const magBits = (fixedBitLen(initialScale) - fixedBitLen(scale));
-    const it = maxIterForBits();
+  function clearScreen() {
+    ctx.fillStyle = "#0b0b0f";
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function clampBits(v) {
+    return Math.max(64, Math.min(8192, v | 0));
+  }
+
+  function maxIterForScale(s) {
+    // scaleが小さい＝深いので少し上げる（capはUIで）
+    const mag = Math.max(0, (fixedBitLen(initialScale) - fixedBitLen(s)));
+    const it = 220 + Math.floor(mag * 2.4);
+    return Math.max(200, Math.min(20000, it));
+  }
+
+  function getUI() {
+    const res = Math.max(0.30, Math.min(1.0, parseFloat(resEl?.value || "0.65") || 0.65));
+    const step = Math.max(1, Math.min(16, parseInt(stepEl?.value || "2", 10) || 2));
+    const cap = Math.max(200, Math.min(20000, parseInt(iterCapEl?.value || "1200", 10) || 1200));
+    const preview = !!(previewEl && previewEl.checked);
+    const autoSettle = !!(autoSettleEl && autoSettleEl.checked);
+    const autoBits = !!(autoBitsEl && autoBitsEl.checked);
+    return { res, step, cap, preview, autoSettle, autoBits };
+  }
+
+  function updateHUD(note = "") {
+    const magBits = fixedBitLen(initialScale) - fixedBitLen(scale);
+    const it = Math.min(maxIterForScale(scale), getUI().cap);
 
     hud.textContent =
       `centerX = ${centerX}/2^${bits}\n` +
       `centerY = ${centerY}/2^${bits}\n` +
       `scale   = ${scale}/2^${bits}  (zoom≈2^${magBits})\n` +
-      `iters   = ${it} (cap=${Math.max(200, Math.min(20000, (parseInt(iterCapEl.value, 10) || 1200)) )})\n` +
-      `res     = ${renderScale.toFixed(2)} (dpr=${dpr.toFixed(2)})\n` +
-      `bits    = ${bits} ${autoBitsEl.checked ? "(auto)" : "(manual)"}\n` +
+      `iters   = ${it} (cap=${getUI().cap})\n` +
+      `res     = ${getUI().res.toFixed(2)} (dpr=${dpr.toFixed(2)})\n` +
+      `bits    = ${bits} ${getUI().autoBits ? "(auto)" : "(manual)"}\n` +
       `workers = ${workerCount}\n` +
-      (reason ? `note   = ${reason}` : "");
+      (note ? `note   = ${note}` : "");
   }
 
-  function requestRender(reason="", opts=null) {
+  function resize(keep = true) {
+    dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    cssW = Math.max(1, Math.floor(window.innerWidth));
+    cssH = Math.max(1, Math.floor(window.innerHeight));
+
+    const { res } = getUI();
+    W = Math.max(1, Math.floor(cssW * dpr * res));
+    H = Math.max(1, Math.floor(cssH * dpr * res));
+    canvas.width = W;
+    canvas.height = H;
+
+    // CSS size remains full screen; we render lower internally
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+
+    if (!keep) resetView();
+  }
+
+  function numToFixed(x) {
+    // conservative conversion: use 53-bit float mantissa then shift
+    const sign = x < 0 ? -1n : 1n;
+    const ax = Math.abs(x);
+    const hiBits = Math.min(53, bits);
+    const F = Math.pow(2, hiBits);
+    const hi = BigInt(Math.round(ax * F));
+    const shift = BigInt(bits - hiBits);
+    return sign * (hi << shift);
+  }
+
+  function resetView() {
+    clearError();
+    // Standard starting point
+    centerX = numToFixed(-0.5);
+    centerY = numToFixed(0.0);
+
+    // initial scale: view width about 3.5
+    const s = 3.5 / Math.max(1, W);
+    scale = numToFixed(s);
+    initialScale = scale;
+
+    requestRender("reset", { preview: false });
+  }
+
+  // ---- Rendering ----
+  function requestRender(reason = "", opts = {}) {
     clearError();
     const token = ++renderToken;
-    clearScreen();
 
-    if (autoBitsEl.checked) {
+    const ui = getUI();
+
+    // Auto bits: scale が小さくなってBigIntが太る前に bits を増やして精度を維持
+    if (ui.autoBits) {
+      // scaleのbit長が小さすぎる（=固定小数点の分解能不足）ならbitsを増やして余裕を作る
       const L = fixedBitLen(scale);
-      if (L > 0 && L < 140) {
+      if (L > 0 && L < 160 && bits <= 7936) {
         const add = 256;
         const sh = BigInt(add);
         centerX <<= sh;
         centerY <<= sh;
         scale   <<= sh;
         initialScale <<= sh;
-        bits += add;
-        bitsEl.value = String(bits);
+        bits = clampBits(bits + add);
+        if (bitsEl) bitsEl.value = String(bits);
       }
     }
 
-    const cap = Math.max(200, Math.min(20000, (parseInt(iterCapEl.value, 10) || 1200)));
-    const baseIters = Math.min(maxIterForBits(), cap);
-    const baseStep = Math.max(1, Math.min(16, (parseInt(stepEl.value, 10) || 4)));
+    const itBase = Math.min(maxIterForScale(scale), ui.cap);
+    const isPreview = !!opts.preview;
+    const isHQ = !!opts.hq;
 
-    const isPreview = !!(opts && opts.preview);
-    const isHQ = !!(opts && opts.hq);
+    const iters = isHQ ? Math.min(Math.max(itBase, 1500), ui.cap) : (isPreview ? Math.min(itBase, 700) : itBase);
 
-    const iters = isHQ ? Math.min(Math.max(baseIters, 1500), cap) : (isPreview ? Math.min(baseIters, 900) : baseIters);
+    // 探索用：previewは粗く軽く。停止後/hqはユーザーのstepを尊重（HQは強制1）
+    const step = isHQ ? 1 : (isPreview ? Math.min(16, Math.max(6, ui.step * 3)) : ui.step);
 
-    // 速度と画質の両立：
-    // - preview: stepを強めに（最低6）で軽く
-    // - normal: UIのstep（既定2）
-    // - HQ: step=1 強制
-    const step = isHQ ? 1 : (isPreview ? Math.min(16, Math.max(6, baseStep * 3)) : baseStep);
+    // プレビューはbitsを落として計算（BigIntが小さくなるので激効く）
+    const PREVIEW_BITS_CAP = 192;
+    const bitsUsed = isPreview ? Math.min(bits, PREVIEW_BITS_CAP) : bits;
+    const shBits = bits - bitsUsed;
 
-    const halfW = BigInt(Math.floor(W / 2));
-    const halfH = BigInt(Math.floor(H / 2));
-    const xmin = centerX - halfW * scale;
-    const ymin = centerY - halfH * scale;
+    const halfW = (W / 2) | 0;
+    const halfH = (H / 2) | 0;
 
-    // プレビュー中はビット数を落として高速化（見た目はほぼ維持。深度が深いほど効く）
-    const PREVIEW_BITS_CAP = 160;
-    const bitsUsed = (isPreview ? Math.min(bits, PREVIEW_BITS_CAP) : bits) | 0;
-    const shBits = (bits - bitsUsed) | 0;
+    // xmin/ymin in fixed point
+    const xmin = centerX - BigInt(halfW) * scale;
+    const ymin = centerY - BigInt(halfH) * scale;
+
     const xmin2 = shBits > 0 ? (xmin >> BigInt(shBits)) : xmin;
     const ymin2 = shBits > 0 ? (ymin >> BigInt(shBits)) : ymin;
     const scale2 = shBits > 0 ? (scale >> BigInt(shBits)) : scale;
+
+    clearScreen();
 
     const strip = Math.max(16, Math.floor(H / (workerCount * 6)));
     const jobs = [];
@@ -254,39 +212,32 @@
     }
 
     let done = 0;
-    const total = jobs.length;
 
-    function onMsg(ev) {
+    const onMsg = (ev) => {
       const msg = ev.data;
-      if (!msg || msg.token !== token) return;
-
-      if (msg.type === "strip") {
-        const { startY, rows, buffer } = msg;
-        const data = new Uint8ClampedArray(buffer);
-        const img = new ImageData(data, W, rows);
-        ctx.putImageData(img, 0, startY);
-        done++;
-        if ((done % 8) === 0) updateHUD(`render ${done}/${total}`);
-        if (done >= total) {
-          for (const wk of workers) wk.removeEventListener("message", onMsg);
-          updateHUD(reason);
-        }
-      } else if (msg.type === "error") {
-        showError(msg.message || "worker error");
+      if (!msg || msg.type !== "strip" || msg.token !== token) return;
+      const data = new Uint8ClampedArray(msg.buffer);
+      const img = new ImageData(data, W, msg.startY ? msg.rows : msg.rows);
+      // We used ImageData width=W and rows=msg.rows; put at startY
+      ctx.putImageData(img, 0, msg.startY);
+      done++;
+      if (done >= jobs.length) {
+        for (const wk of workers) wk.removeEventListener("message", onMsg);
+        updateHUD(reason + (isPreview ? " (preview)" : isHQ ? " (HQ)" : ""));
       }
-    }
+    };
 
     for (const wk of workers) wk.addEventListener("message", onMsg);
 
     for (let i = 0; i < jobs.length; i++) {
-      const w = workers[i % workerCount];
-      const { y0, rows } = jobs[i];
-      w.postMessage({
+      const wk = workers[i % workerCount];
+      const j = jobs[i];
+      wk.postMessage({
         type: "job",
         token,
         W,
-        startY: y0,
-        rows,
+        startY: j.y0,
+        rows: j.rows,
         step,
         maxIter: iters,
         bits: bitsUsed,
@@ -297,31 +248,27 @@
     }
   }
 
-  // Interaction
+  // ---- Interaction ----
+  function toCanvasXY(ev) {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((ev.clientX - rect.left) * dpr * getUI().res);
+    const y = Math.floor((ev.clientY - rect.top) * dpr * getUI().res);
+    return { x: Math.max(0, Math.min(W - 1, x)), y: Math.max(0, Math.min(H - 1, y)) };
+  }
+
   let isDragging = false;
   let lastX = 0, lastY = 0;
 
-  function toCanvasXY(ev) {
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((ev.clientX - rect.left) * dpr);
-    const y = Math.floor((ev.clientY - rect.top) * dpr);
-    return { x, y };
-  }
-
   let renderDebounce = 0;
   let settleTimer = 0;
-  function scheduleRender(reason="") {
-    // 操作中はプレビュー（粗く/軽く）を優先し、止まったら（任意で）高精細に描き直す
+
+  function scheduleRender(reason = "") {
     clearTimeout(renderDebounce);
     renderDebounce = setTimeout(() => requestRender(reason, { preview: true }), 40);
 
-    // 自動settle（高精細）は重いので、ON/OFFできるようにする
-    if (autoSettleEl && autoSettleEl.checked) {
+    if (getUI().autoSettle) {
       clearTimeout(settleTimer);
       settleTimer = setTimeout(() => requestRender("settle", { preview: false }), 220);
-    }
-  } else {
-      renderDebounce = setTimeout(() => requestRender(reason), 80);
     }
   }
 
@@ -341,86 +288,78 @@
 
     centerX -= BigInt(dx) * scale;
     centerY -= BigInt(dy) * scale;
+
     scheduleRender("pan");
   }, { passive: true });
 
-  canvas.addEventListener("pointerup", () => isDragging = false, { passive: true });
-  canvas.addEventListener("pointercancel", () => isDragging = false, { passive: true });
+  canvas.addEventListener("pointerup", () => { isDragging = false; }, { passive: true });
+  canvas.addEventListener("pointercancel", () => { isDragging = false; }, { passive: true });
 
+  // Shift-zoom wheel: power-of-two zoom via bit shifts (fast & deep-friendly)
+  let wheelAcc = 0;
   canvas.addEventListener("wheel", (ev) => {
     ev.preventDefault();
-    const p = toCanvasXY(ev);
+    const { x: px, y: py } = toCanvasXY(ev);
 
-    const halfWn = Math.floor(W / 2);
-    const halfHn = Math.floor(H / 2);
-    const dx = BigInt(p.x - halfWn);
-    const dy = BigInt(p.y - halfHn);
+    const ui = getUI();
 
-    const oldScale = scale;
+    const base = 0.020;                   // 通常（大きいほど一気）
+    const fine = ev.shiftKey ? 0.25 : 1.0; // Shiftで細かく
+    const turbo = ev.altKey ? 4.0 : 1.0;   // Altでターボ
+    const hyper = ev.ctrlKey ? 12.0 : 1.0; // Ctrlでハイパー
 
-    const base = 0.0080;
-    const fine = ev.shiftKey ? 0.25 : 1.0;
-    const turbo = ev.altKey ? 4.0 : 1.0;
-    const hyper = ev.ctrlKey ? 12.0 : 1.0;
     const dyN = ev.deltaY * (ev.deltaMode === 1 ? 16 : 1);
-    const speed = base * fine * turbo * hyper;
-    const k = Math.max(-ZOOM_DEN*64, Math.min(ZOOM_DEN*64, Math.round(ev.deltaY * speed * ZOOM_DEN)));
-    applyPow2K(k);
+    wheelAcc += dyN * base * fine * turbo * hyper;
 
-    centerX += dx * (oldScale - scale);
-    centerY += dy * (oldScale - scale);
+    const k = (wheelAcc > 0) ? Math.floor(wheelAcc) : Math.ceil(wheelAcc);
+    if (k === 0) return;
+    wheelAcc -= k;
+
+    // cursor anchored zoom using integer shift k:
+    // k>0 => zoom out (scale << k)
+    // k<0 => zoom in  (scale >> -k)
+    const dx = BigInt(px - ((W / 2) | 0));
+    const dy = BigInt(py - ((H / 2) | 0));
+
+    const xBefore = centerX + dx * scale;
+    const yBefore = centerY + dy * scale;
+
+    if (k > 0) {
+      const sh = BigInt(Math.min(60, k)); // safety clamp per event
+      scale <<= sh;
+    } else {
+      const sh = BigInt(Math.min(60, -k));
+      scale >>= sh;
+      if (scale <= 0n) scale = 1n;
+    }
+
+    const xAfter = centerX + dx * scale;
+    const yAfter = centerY + dy * scale;
+
+    centerX += (xBefore - xAfter);
+    centerY += (yBefore - yAfter);
 
     scheduleRender("zoom");
   }, { passive: false });
-
-  canvas.addEventListener("dblclick", (ev) => {
-    const p = toCanvasXY(ev);
-    const halfWn = Math.floor(W / 2);
-    const halfHn = Math.floor(H / 2);
-    const dx = BigInt(p.x - halfWn);
-    const dy = BigInt(p.y - halfHn);
-
-    const oldScale = scale;
-    const k = ev.shiftKey ? (ZOOM_DEN) : (-ZOOM_DEN); // *2 or /2
-    applyPow2K(k);
-
-    centerX += dx * (oldScale - scale);
-    centerY += dy * (oldScale - scale);
-
-    requestRender(ev.shiftKey ? "dbl zoom out" : "dbl zoom in");
-  }, { passive: true });
 
   window.addEventListener("keydown", (ev) => {
     if (ev.key.toLowerCase() === "r") resetView();
   }, { passive: true });
 
-  resetBtn.addEventListener("click", () => resetView());
-  nukeBtn.addEventListener("click", () => { location.href = "./reset.html"; });
+  resetBtn?.addEventListener("click", () => resetView());
+  nukeBtn?.addEventListener("click", () => { location.href = "./reset.html"; });
+
+  hqBtn?.addEventListener("click", () => {
+    // HQ: renderScale=1.0 and step=1, no preview bits cap
+    if (resEl) resEl.value = "1.00";
+    if (stepEl) stepEl.value = "1";
+    resize(true);
+    requestRender("HQ", { hq: true, preview: false });
   });
-  if (hqBtn) {
-    hqBtn.addEventListener("click", () => {
-      // 一発高精細：内部解像度1.0で再描画（探索中はresを戻してOK）
-      const prevRes = renderScale;
-      const prevStep = stepEl ? stepEl.value : "2";
-      if (resEl) resEl.value = "1.0";
-      renderScale = 1.0;
-      resize(true);
 
-      // HQレンダ（重いので手動）
-      requestRender("HQ", { hq: true });
-
-      // UIのstepは触らない（値は保持）
-      if (stepEl) stepEl.value = prevStep;
-
-      // ※resはユーザーが戻す前提（自動で戻すと「綺麗に撮りたい」時に困る）
-    });
-  }
-
-
-  // UI bindings
-  bitsEl.addEventListener("change", () => {
-    if (autoBitsEl.checked) return;
-    const newBits = Math.max(128, Math.min(32768, (parseInt(bitsEl.value, 10) || bits)));
+  // Bits change (manual): rescale fixed point to new bits
+  bitsEl?.addEventListener("change", () => {
+    const newBits = clampBits(parseInt(bitsEl.value, 10) || bits);
     if (newBits === bits) return;
     const diff = newBits - bits;
     if (diff > 0) {
@@ -429,14 +368,19 @@
     } else {
       const sh = BigInt(-diff);
       centerX >>= sh; centerY >>= sh; scale >>= sh; initialScale >>= sh;
+      if (scale <= 0n) scale = 1n;
     }
     bits = newBits;
-    requestRender("bits changed");
+    requestRender("bits changed", { preview: false });
   });
 
-  autoBitsEl.addEventListener("change", () => requestRender("auto bits"));
-  stepEl.addEventListener("change", () => requestRender("step"));
+  autoBitsEl?.addEventListener("change", () => requestRender("auto bits", { preview: false }), { passive: true });
+  stepEl?.addEventListener("change", () => requestRender("step", { preview: false }), { passive: true });
+  resEl?.addEventListener("input", () => { resize(true); scheduleRender("res"); }, { passive: true });
+  iterCapEl?.addEventListener("change", () => requestRender("iter cap", { preview: false }), { passive: true });
 
-  resize(false);
+  // init
+  resize(true);
+  resetView();
   updateHUD("ready");
 })();
