@@ -39,10 +39,60 @@
   let initialScale = 0;      // float64 (complex per pixel)
   let scaleF = 0;            // float64
 
-  // UltraDeep fixed-point scale: complex per pixel represented as fixed-point with bits
-  // fixed = real * 2^bits
-  function f2fixed(v, bits){ return BigInt(Math.round(v * Math.pow(2, bits))); }
-  function fixed2f(v, bits){ return Number(v) / Math.pow(2, bits); }
+  // UltraDeep fixed-point helpers (BigInt)
+// Number -> fixed-point BigInt with arbitrary bits using IEEE-754 decomposition.
+// This avoids Math.pow(2,bits) overflow when bits > ~1023.
+function f2fixed(n, bits){
+    if (!Number.isFinite(n)) throw new RangeError("f2fixed: non-finite");
+    bits = bits|0;
+    if (n === 0) return 0n;
+
+    const buf = new ArrayBuffer(8);
+    const dv = new DataView(buf);
+    dv.setFloat64(0, n, false);
+
+    const hi = dv.getUint32(0, false);
+    const lo = dv.getUint32(4, false);
+
+    const sign = (hi >>> 31) ? -1n : 1n;
+    const exp = (hi >>> 20) & 0x7ff;
+    const fracHi = hi & 0xFFFFF;
+
+    let mant = (BigInt(fracHi) << 32n) | BigInt(lo); // 52-bit fraction (no hidden bit yet)
+    let e2;
+    if (exp === 0) {
+      // subnormal: value = mant * 2^-1074
+      e2 = -1074;
+    } else {
+      // normal: value = (2^52 + mant) * 2^(exp-1023-52)
+      mant = (1n << 52n) | mant;
+      e2 = (exp - 1023 - 52);
+    }
+
+    let shift = e2 + bits; // fixed = mant * 2^(e2+bits)
+    let out;
+    if (shift >= 0) {
+      out = mant << BigInt(shift);
+    } else {
+      const rshift = BigInt(-shift);
+      // round-to-nearest: add 0.5 ulp before shifting
+      const half = 1n << (rshift - 1n);
+      out = (mant + half) >> rshift;
+    }
+    return sign * out;
+  }
+
+// fixed-point BigInt -> Number (only safe for moderate bits; used for debug only)
+function fixed2f(v, bits){
+    bits = bits|0;
+    if (bits > 1023) {
+      // Avoid Infinity; best-effort downshift for debug
+      const sh = bits - 1023;
+      v = v >> BigInt(sh);
+      bits = 1023;
+    }
+    return Number(v) / Math.pow(2, bits);
+  }
 
   // Workers
   const workerCount = Math.max(1, Math.min((navigator.hardwareConcurrency || 4) - 1, 8));
